@@ -244,5 +244,6 @@ long sum_list(list *lst)
 		sum += cur_node->data;
 		cur_node = cur_node->next;
 	}
+	printf("%ld\n", sum);
 	return sum;
 }

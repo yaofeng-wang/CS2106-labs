@@ -23,7 +23,6 @@
 #define MAP 6
 
 void run_instruction(list *lst, int instr, FILE* file);
-void print_list(list *lst);
 
 int main(int argc, char **argv)
 {
@@ -43,7 +42,6 @@ int main(int argc, char **argv)
 
     // rest of code logic here
 
-    // check if file exists
     FILE *file;
     if ((file = fopen(fname, "r"))) {
 
@@ -60,9 +58,7 @@ int main(int argc, char **argv)
 
         reset_list(lst);
         free(lst);
-
         fclose(file);
-
         return 0;
 
     }
@@ -77,8 +73,7 @@ void run_instruction(list *lst, int instr, FILE* file)
     switch (instr)
     {
     case SUM_LIST:
-        printf("%ld\n", sum_list(lst));
-        // print_list(lst);
+        sum_list(lst);
         break;
     case INSERT_FROM_HEAD_AT:
         fscanf(file, "%d %d", &index, &data);
@@ -93,7 +88,6 @@ void run_instruction(list *lst, int instr, FILE* file)
         delete_node_from_head_at(lst, index);
         break;
      case DELETE_FROM_TAIL_AT:
-        // printf("request: delete_node_from_tail_at\n");
         fscanf(file, "%d", &index);
         delete_node_from_tail_at(lst, index);
         break;   
@@ -104,26 +98,4 @@ void run_instruction(list *lst, int instr, FILE* file)
         fscanf(file, "%d", &index);
         map(lst, func_list[index]);
     }
-}
-
-// print out the whole list in a straight line
-// prints both from left to right and right to left
-void print_list(list *lst)
-{
-    printf("Forward: [ ");
-    node *curr = lst->head;
-    while (curr != NULL)
-    {
-        printf("%d ", curr->data);
-        curr = curr->next;
-    }
-
-    printf("], Backwards: [ ");
-    curr = lst->tail;
-    while (curr != NULL)
-    {
-        printf("%d ", curr->data);
-        curr = curr->prev;
-    }
-    printf("]\n");
 }
