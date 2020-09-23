@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h> // extra
 
 #include "sm.h"
 
@@ -23,7 +24,7 @@ int main(int argc, char *argv[]) {
 
 static void print_prompt(void) {
   printf("sm> ");
-  fflush(stdout);
+  fflush(stdout); // flush output buffer
 }
 
 static void process_commands(FILE *file) {
@@ -32,6 +33,7 @@ static void process_commands(FILE *file) {
   size_t line_size = 0;
   print_prompt();
   while (!exiting) {
+    // read command from stdin
     if (getline(&line, &line_size, file) == -1) {
       if (feof(file)) {
         printf("End of commands; shutting down\n");
@@ -41,7 +43,9 @@ static void process_commands(FILE *file) {
       sm_shutdown();
       break;
     }
-    char **tokens = NULL;
+
+    // pointer to pointer of char
+    char **tokens = NULL; 
     size_t num_tokens = tokenise(line, &tokens);
     if (!tokens) {
       printf("Failed to tokenise command\n");
@@ -83,7 +87,9 @@ static void process_commands(FILE *file) {
   } while (0)
 
 static bool handle_command(const size_t num_tokens, char ***tokensp) {
-  const char *const cmd = (*tokensp)[0];
+  const char *const cmd = (*tokensp)[0]; 
+  // const pointer to const char
+  // gets first element of char pointer array
   if (!cmd) {
     // no-op
   } else if (strcmp(cmd, "start") == 0) {
@@ -128,9 +134,13 @@ static bool handle_command(const size_t num_tokens, char ***tokensp) {
 }
 
 static void transform_tokens_for_start(const size_t num_tokens, char ***tokens) {
+  // pointer to an char pointer
   char **cursor = (*tokens) + 1;
+
+  // iterate through tokens until we get '|'
   while (*cursor) {
     // if this is a pipe, then end this subarray
+    // change all '|' into NULL
     if (strcmp(*cursor, "|") == 0) {
       *cursor = NULL;
     }
@@ -146,18 +156,32 @@ static void transform_tokens_for_start(const size_t num_tokens, char ***tokens) 
   (*tokens)[num_tokens] = (*tokens)[num_tokens + 1] = NULL;
 }
 
+/**
+- Reads the line of command points 
+- pointer points to start of token in line
+- spaces in line becomes \0
+- terminate tokens with NULL -> size of tokens is num_tokens + 1
+
+Returns the number of char pointers in tokens
+**/
 static size_t tokenise(char *const line, char ***tokens) {
-  size_t reg_argv_buf_index = 0;
-  size_t ret_argv_nmemb = 8;
-  size_t ret_argv_index = 0;
-  char **ret = calloc(ret_argv_nmemb, sizeof(char *));
+  size_t reg_argv_buf_index = 0; // number of characters in line read
+  size_t ret_argv_nmemb = 8;     // initial size of array for token
+  size_t ret_argv_index = 0;     // number of tokens, 
+
+
+  // each pointer points to the start of each token
+  // allocate memory for an array of 8 char pointers
+  char **ret = calloc(ret_argv_nmemb, sizeof(char *)); 
   if (!ret) {
     goto fail;
   }
 
   bool last_was_tok = false;
   while (1) {
+    
     char *const cur = line + reg_argv_buf_index;
+
     if (*cur == '\0') {
       // if we've hit the end of the line, break
       break;
@@ -174,6 +198,7 @@ static size_t tokenise(char *const line, char ***tokens) {
       // whitespace), then add this to the result
       if (!last_was_tok) {
         // + 1 for the NULL at the end
+        
         if (ret_argv_index + 1 >= ret_argv_nmemb) {
           // our result array is full, resize it
           ret_argv_nmemb += 8;
