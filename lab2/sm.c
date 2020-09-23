@@ -63,6 +63,8 @@ void sm_start(const char *processes[]) {
 	// start /bin/echo hello | /bin/sha256sum
 	// start /bin/echo hello | /bin/diff test.c -
 	// start /bin/echo hello 
+	// start /bin/sleep 500 | /bin/sleep 500 | /bin/sleep 500
+	// start /bin/sleep 10 | /bin/sleep 10 | /bin/sleep 10
 
 	// get total num of processes in this service
 	int tot_pro = 1; // assume there will at least be 1 process in the service
@@ -221,9 +223,6 @@ void sm_start(const char *processes[]) {
 			if (pid_records[last_service_id]) {
 				num_pids = pid_records[last_service_id]->num_pids;
 				pids = pid_records[last_service_id]->pids;
-				free(pid_records[last_service_id]->pids);
-				free(pid_records[last_service_id]);
-				pid_records[last_service_id] = NULL;
 			}
 			sm_pid_t* pid_record = (sm_pid_t*) malloc(sizeof(sm_pid_t));
 			pid_record->num_pids = num_pids + 1;
@@ -231,6 +230,13 @@ void sm_start(const char *processes[]) {
 			for (int i=0; i < num_pids; i++) {
 				pid_record->pids[i] = pids[i];
 			}
+
+			if (pid_records[last_service_id]) {
+				free(pid_records[last_service_id]->pids);
+				free(pid_records[last_service_id]);
+				pid_records[last_service_id] = NULL;
+			}
+
 			pid_record->pids[num_pids] = cpid;
 			pid_records[last_service_id] = pid_record;
 
@@ -323,6 +329,8 @@ void sm_startlog(const char *processes[]) {
 	// startlog /bin/echo hello | /bin/sha256sum
 	// startlog /bin/echo hello | /bin/diff test.c -
 	// startlog /bin/echo hello
+	// startlog /bin/sleep 500 | /bin/sleep 500 | /bin/sleep 500
+	// startlog /bin/sleep 10 | /bin/sleep 10 | /bin/sleep 10
 
 	// get total num of processes in this service
 	int tot_pro = 1; // assume there will at least be 1 process in the service
@@ -494,9 +502,7 @@ void sm_startlog(const char *processes[]) {
 			if (pid_records[last_service_id]) {
 				num_pids = pid_records[last_service_id]->num_pids;
 				pids = pid_records[last_service_id]->pids;
-				free(pid_records[last_service_id]->pids);
-				free(pid_records[last_service_id]);
-				pid_records[last_service_id] = NULL;
+
 			}
 			sm_pid_t* pid_record = (sm_pid_t*) malloc(sizeof(sm_pid_t));
 			pid_record->num_pids = num_pids + 1;
@@ -504,6 +510,12 @@ void sm_startlog(const char *processes[]) {
 			for (int i=0; i < num_pids; i++) {
 				pid_record->pids[i] = pids[i];
 			}
+			if (pid_records[last_service_id]) {
+				free(pid_records[last_service_id]->pids);
+				free(pid_records[last_service_id]);
+				pid_records[last_service_id] = NULL;
+			}
+
 			pid_record->pids[num_pids] = cpid;
 			pid_records[last_service_id] = pid_record;
 
