@@ -174,14 +174,12 @@ void exit_controller_destroy(exit_controller_t *exit_controller){
 			perror("Failed to destroy semaphore");
 			exit(1);
 		}
-
-		// currently unable to free memory
-		// free(exit_controller->priority_0[i]);
+		free(exit_controller->priority_0[i]);
 
 	}
 	
 	// free memory allocated for priority_0
-	//free(exit_controller->priority_0);
+	free(exit_controller->priority_0);
 
 	// destroy mutex in priority_1
 	for (int i=0; i < EXIT_QUEUE_SIZE; i++) {
