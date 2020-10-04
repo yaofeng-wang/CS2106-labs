@@ -8,10 +8,21 @@
 #define __CS2106_EXIT_CONTROLLER_H_
 
 #include <semaphore.h>
+#include <stdlib.h>
 
 #define MAX_PRIORITIES 5000 // we set a limit on how many possible priorities we have
 
 typedef struct exit_controller {
+	sem_t **priority_0;
+	int first_0;
+	int last_0;
+
+	sem_t **priority_1;
+	int first_1;
+	int last_1;
+
+	sem_t *mutex;
+	int exit_line_empty;
     // define your variables here
 } exit_controller_t;
 

@@ -8,11 +8,21 @@
 #define __CS2106_ENTRY_CONTROLLER_H_
 
 #include <semaphore.h>
+#include <stdlib.h>
 
 #define ENTRY_CONTROLLER_MAX_USES 5000 // we impose a limit on the number of uses we can
                                        // have
 
 typedef struct entry_controller {
+	sem_t **records;
+	sem_t *mutex;
+
+	int first;
+	int last;
+	int occupied_loading_bays;
+	int loading_bays;
+	
+
     // define your variables here
 } entry_controller_t;
 
