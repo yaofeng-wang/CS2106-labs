@@ -99,25 +99,27 @@ void* run_thread( void* task ) {
   }
 
   thread_task->thread_return = 0;
-  pthread_exit(0);
+  return 0; 
+  // changed from thread_exit(0); to eliminate memory loss error
+  // in valgrind
 }
 
 void print_num( int n ) {
   usleep( (rand() % 500) * 200 );
-  printf( "%d\n", n );
+  printf( "##%d\n", n );
 }
 
 void print_fizz( void ) {
   usleep( (rand() % 500) * 200 );
-  printf( "Fizz\n" );
+  printf( "##Fizz\n" );
 }
 
 void print_buzz( void ) {
   usleep( (rand() % 500) * 200 );
-  printf( "Buzz\n" );
+  printf( "##Buzz\n" );
 }
 
 void print_fizzbuzz( void ) {
   usleep( (rand() % 500) * 200 );
-  printf( "FizzBuzz\n" );
+  printf( "##FizzBuzz\n" );
 }

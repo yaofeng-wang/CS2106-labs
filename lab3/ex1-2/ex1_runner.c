@@ -105,5 +105,7 @@ void* run_thread( void* task ) {
   printf ( "[Thread %2d] exiting barrier\n", thread_id );
   thread_task->thread_return = waiting_at_barrier;
 
-  pthread_exit(0);
+  return 0;
+  // changed from thread_exit(0); to eliminate memory loss error
+  // in valgrind
 }
