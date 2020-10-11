@@ -3,16 +3,11 @@
  *
  * Your implementation should go in this file.
  */
-#include <stdio.h>
 
 #include "entry_controller.h"
 
-
-// assuming maximum number of trains = 5000
-
 void entry_controller_init( entry_controller_t *entry_controller, int loading_bays ) {
-	// printf("Start entry_controller_init\n");
-	// record of all the trains
+	// records of all the trains
 	// each trains will have their own semaphore in records, regardless of whether
 	// they are queued or directly enter the loading bay 
 	entry_controller->records = malloc(sizeof(sem_t *) * (ENTRY_CONTROLLER_MAX_USES));
@@ -38,6 +33,9 @@ void entry_controller_init( entry_controller_t *entry_controller, int loading_ba
 		exit(1);
 	}
 
+	// number of trains in queue
+	entry_controller->count = 0;
+
 	// index of the first train to exit the queue
 	entry_controller->first = 0;
 
@@ -49,51 +47,76 @@ void entry_controller_init( entry_controller_t *entry_controller, int loading_ba
 
 	// max capacity of loading bay
 	entry_controller->loading_bays = loading_bays;
-	// printf("End entry_controller_init\n");
 }
 
 // train sends request to enter loading bay
 void entry_controller_wait( entry_controller_t *entry_controller ) {
-	// printf("Start entry_controller_wait\n");
-
 	int enter_queue = 0;
 	int index = 0;
 
-	sem_wait(entry_controller->mutex);
+	if (sem_wait(entry_controller->mutex) != 0) {
+		perror("Failed to wait semaphore\n");
+		exit(1);
+	}
+
+	if (entry_controller->count == ENTRY_CONTROLLER_MAX_USES) {
+		perror("Entry queue is full");
+		exit(1);
+	}
 
 	// get index for train
-	index = entry_controller->last++;
+	index = entry_controller->last;
 
-	// if loading bay is not full, add train into loading bay
-	enter_queue = (int) entry_controller->occupied_loading_bays == entry_controller->loading_bays;
+	// update last for next train
+	entry_controller->last = ((entry_controller->last + 1) % ENTRY_CONTROLLER_MAX_USES);
+
+	// if loading bay is full or queue is not empty, add into queue
+	enter_queue = (int) ((entry_controller->count != 0) || (entry_controller->occupied_loading_bays == entry_controller->loading_bays));
+	
+	// assume that train will stay in queue, increase count by 1
+	entry_controller->count += 1;
+
 	if (!enter_queue) {
-		entry_controller->first++;
+		entry_controller->first = ((entry_controller->first + 1) % ENTRY_CONTROLLER_MAX_USES);
+		entry_controller->count--;
 		entry_controller->occupied_loading_bays++;
 	}
 
-	sem_post(entry_controller->mutex);
+	if (sem_post(entry_controller->mutex) != 0) {
+		perror("Failed to post semaphore\n");
+		exit(1);
+	}
 
 	// if loading bay is full, train will wait on its semaphore
 	if (enter_queue) {
-		sem_wait(entry_controller->records[index]);
-	}
-	// printf("End entry_controller_wait\n");
-	
+
+		if (sem_wait(entry_controller->records[index]) != 0) {
+			perror("Failed to wait semaphore\n");
+			exit(1);
+		}
+	}	
 }
 
 // train sends request to exit loading bay
 void entry_controller_post( entry_controller_t *entry_controller ) {
-	// printf("Start entry_controller_post\n");
-
-	sem_wait(entry_controller->mutex);
+	if(sem_wait(entry_controller->mutex) != 0) {
+		perror("Failed to wait semaphore\n");
+		exit(1);
+	}
 
 	// if queue is not empty, add train from queue into loading bay 
-	if (entry_controller->first != entry_controller->last) {
+	if (entry_controller->count != 0) {
 		// allow first train in queue to proceed 
-		sem_post(entry_controller->records[entry_controller->first]);
+		if (sem_post(entry_controller->records[entry_controller->first]) != 0) {
+			perror("Failed to post semaphore\n");
+			exit(1);
+		}
 
 		// update first
-		entry_controller->first++;
+		entry_controller-> first = ((entry_controller->first + 1) % ENTRY_CONTROLLER_MAX_USES);
+
+		// update count
+		entry_controller->count--;
 
 		// number of trains in loading bay remains the same
 	}
@@ -103,15 +126,13 @@ void entry_controller_post( entry_controller_t *entry_controller ) {
 		entry_controller->occupied_loading_bays--;
 	}
 
-	sem_post(entry_controller->mutex);
-
-	// printf("End entry_controller_post\n");
+	if (sem_post(entry_controller->mutex) != 0) {
+		perror("Failed to post semaphore\n");
+		exit(1);
+	}
 }
 
 void entry_controller_destroy( entry_controller_t *entry_controller ) {
-
-	// printf("Start entry_controller_destroy\n");
-
 	// destroy all mutexes and the memory allocated in records
 	for (int i=0; i < ENTRY_CONTROLLER_MAX_USES; i++) {
 		if (sem_destroy(entry_controller->records[i]) != 0) {
@@ -132,7 +153,5 @@ void entry_controller_destroy( entry_controller_t *entry_controller ) {
 
 	// free memory allocated for mutex
 	free(entry_controller->mutex);
-
-	// printf("End entry_controller_destroy\n");
 }
 

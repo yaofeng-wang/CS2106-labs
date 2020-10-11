@@ -7,8 +7,9 @@
 #ifndef __CS2106_EXIT_CONTROLLER_H_
 #define __CS2106_EXIT_CONTROLLER_H_
 
-#include <semaphore.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <semaphore.h>
 
 #define MAX_PRIORITIES 5000 // we set a limit on how many possible priorities we have
 

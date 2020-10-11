@@ -5,14 +5,11 @@
  * as the method signatures will be needed to compile with the runner.
  */
 
-#define EXIT_QUEUE_SIZE 51
-#include <stdio.h>
-
+#define EXIT_QUEUE_SIZE 51 // 1 + max num trains in loading bay because we need the buffer
+                           // to indicate when the queue is full 
 #include "exit_controller.h"
 
 void exit_controller_init(exit_controller_t *exit_controller, int no_of_priorities) {
-	// printf("Start exit_controller_init\n");
-
 	exit_controller->no_of_priorities = no_of_priorities;
 
 	// circular queue for each priority
@@ -70,27 +67,24 @@ void exit_controller_init(exit_controller_t *exit_controller, int no_of_prioriti
 				
 	// flag indicates whether exit line is empty
 	exit_controller->exit_line_empty = 1;
-	
-
-	// printf("End exit_controller_init\n");
-
-
 }
 
 // train sents request to enter exit line
 void exit_controller_wait(exit_controller_t *exit_controller, int priority) {
-	// printf("Start exit_controller_wait\n");
+
 	int enter_queue = 0;
 	int index = 0;
 	sem_wait(exit_controller->mutex);
 
 	// if exit line is empty, then exit_line_empty should be false
 	if (exit_controller->exit_line_empty) {
+
+		// also indicates whether the queue is empty for all priorities
+		// in practice, only the first train will hit this line
 		exit_controller->exit_line_empty = 0;
 
 	}
-
-	// if exit line is not empty, check if the queue is full
+	// if exit line is not empty and the queue is not full
 	// set enter_queue to true
 	// and get index for train
 	// and update last variable 
@@ -112,15 +106,10 @@ void exit_controller_wait(exit_controller_t *exit_controller, int priority) {
 		sem_wait(exit_controller->MLQ[priority][index]);
 	}
 	// if enter_queue is false, then do nothing
-
-
-	// printf("End exit_controller_wait\n");
 }
 
 // train sents request to exit exit line
 void exit_controller_post(exit_controller_t *exit_controller, int priority) {
-	// printf("Start exit_controller_post\n");
-
 	(void) priority;
 
 	int foundTrain = 0;
@@ -139,20 +128,15 @@ void exit_controller_post(exit_controller_t *exit_controller, int priority) {
 
 	}
 
-	// if all queues are empty, then let exit_line_empty to be true
+	// if all queues are empty, then let exit_line_empty be true
 	if (!foundTrain) {
 		exit_controller->exit_line_empty = 1;
 	}
-
 	sem_post(exit_controller->mutex);
-
-	// printf("End exit_controller_post\n");
 }
 
 void exit_controller_destroy(exit_controller_t *exit_controller){
 	
-	// printf("Start exit_controller_destroy\n");
-
 	// destroy mutex in MLQ
 	for (int i = 0; i < exit_controller->no_of_priorities; i++) {
 		for (int j = 0; j < EXIT_QUEUE_SIZE; j++) {
@@ -181,10 +165,7 @@ void exit_controller_destroy(exit_controller_t *exit_controller){
 
 	// free memory allocated for mutex
 	free(exit_controller->mutex);
-
-	// printf("End exit_controller_destroy\n");
-
 }
-// ./train_runner 4999 50 2 1 : OK
-// ./train_runner 4999 50 2 2 : OK
-// ./train_runner 4999 50 2 3 : OK
+// ./train_runner 4999 50 2 1 : 
+// ./train_runner 4999 50 2 2 : 
+// ./train_runner 4999 50 2 3 : 
