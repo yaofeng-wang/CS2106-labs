@@ -5,17 +5,18 @@
 * Lab Group:
 *************************************/
 
-
-#include <stddef.h>
+#include <assert.h>
+#include <errno.h>
 #include <fcntl.h>
-#include <unistd.h>
+#include <semaphore.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 
 /*
 You should modify these structs to suit your implementation,
@@ -29,11 +30,23 @@ requirements in the lab document.  If you declare additional names (helper struc
 */
 
 typedef struct {
+    // position of next divider relative to the start of heap, 
+    // value = length of heap if next divider does not exist.
+    int next;
+
+    // Whether the data to the right is free    
+    int is_free; 
+} shmheap_divider;
+
+
+typedef struct {
 	char *name;
 	void *ptr;
 
 	size_t sz;
 	size_t len;
+
+	sem_t *sem_ptr;
 } shmheap_memory_handle;
 
 
