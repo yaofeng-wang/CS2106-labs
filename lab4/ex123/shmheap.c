@@ -10,16 +10,15 @@
 /*
 Additional helper private functions.
 */
-void smhheap_update(shmheap_memory_handle mem);
 int smhheap_get_prev_divider(shmheap_memory_handle mem, int offset);
 int shmheap_convert_to_byte_aligned_size(int sz);
 
 int SHMHEAP_BYTE_ALIGNMENT = 8;
 
-
 shmheap_memory_handle shmheap_create(const char *name, size_t len) {
+    // printf("In shmheap_create.....\n");
 
-    // create new shared memory object via shm_open
+    //create new shared memory object via shm_open
     int fd = shm_open(name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
 	if (fd == -1) {
 		perror("open failed\n");
@@ -35,7 +34,7 @@ shmheap_memory_handle shmheap_create(const char *name, size_t len) {
 	// create mapping between shared memory object and 
     // virtual address space via mmap 
     // returns ptr to address space
-	void *ptr = mmap(NULL, len, PROT_WRITE | PROT_READ, MAP_SHARED_VALIDATE,fd, 0);
+	void *ptr = mmap(NULL, len, PROT_WRITE | PROT_READ, MAP_SHARED_VALIDATE, fd, 0);
     if (ptr == (void *) -1) {
     	perror("mmap failed\n");
     	exit(1);
@@ -54,24 +53,23 @@ shmheap_memory_handle shmheap_create(const char *name, size_t len) {
     handle.len = len;
     handle.ptr = ptr;
 
-    // create named semaphore with the same name as shared memory
-    // add pointer to semaphore to handler
-    sem_t *sem_ptr = sem_open(name, O_CREAT, S_IRUSR | S_IWUSR, 1);
-    if (sem_ptr == SEM_FAILED) {
-        perror("sem_open failed\n");
-        exit(1);
-    }
-    handle.sem_ptr = sem_ptr;
 
     // create first divider in shared heap
-    shmheap_first_divider *first_divider_ptr =  (shmheap_first_divider *) ptr;
-    first_divider_ptr->next = len;
-    first_divider_ptr->is_free = 1;
-    first_divider_ptr->next_mem = -1;
+    sem_t *first_divider_ptr = (sem_t *) ptr;
+    if (sem_init(first_divider_ptr, 1 , 1) != 0) {
+        perror("sem_init failed\n");
+        exit(1);
+    }
+
+    // create divider in shared heap
+    shmheap_divider *divider_ptr =  (shmheap_divider *) (ptr + sizeof(sem_t));
+    divider_ptr->next = len;
+    divider_ptr->is_free = 1;
 
     // return shmheap_memory_handle
     return handle;
-
+    
+    // printf("Ended shmheap_create.....\n");
 }
 
 shmheap_memory_handle shmheap_connect(const char *name) {
@@ -113,15 +111,7 @@ shmheap_memory_handle shmheap_connect(const char *name) {
     handle.len = len;
     handle.ptr = ptr;
 
-    // open named semaphore with the same name as shared memory
-    // add pointer to semaphore to handler
-    sem_t *sem_ptr = sem_open(name, O_RDWR);
-    if (sem_ptr == SEM_FAILED) {
-        perror("sem_open failed\n");
-        exit(1);
-    }
-    handle.sem_ptr = sem_ptr;
-
+    // printf("Ended shmheap_connect\n");
     // return shmheap_memory_handle
     return handle;
 }
@@ -134,17 +124,23 @@ void shmheap_disconnect(shmheap_memory_handle mem) {
 		exit(1);
 	}
 
-    // close semaphore
-    if (sem_close(mem.sem_ptr) != 0) {
-        perror("sem_close failed\n");
-        if (errno == EINVAL) {
-            perror("invalid semaphore\n");
-        }
-        exit(1);
-    }
+    // // close semaphore
+    // if (sem_close(mem.sem_ptr) != 0) {
+    //     perror("sem_close failed\n");
+    //     if (errno == EINVAL) {
+    //         perror("invalid semaphore\n");
+    //     }
+    //     exit(1);
+    // }
 }
 
 void shmheap_destroy(const char *name, shmheap_memory_handle mem) {
+
+    // destroy semaphore
+    if (sem_destroy(mem.ptr) != 0) {
+        perror("sem_destroy failed\n");
+        exit(1);
+    }
 
 	// unmap from shared memory object via munmap
 	if (munmap(mem.ptr, mem.len) != 0) {
@@ -158,163 +154,105 @@ void shmheap_destroy(const char *name, shmheap_memory_handle mem) {
     	exit(1);
     }
 
-    // close semaphore
-    if (sem_close(mem.sem_ptr) != 0) {
-        perror("sem_close failed\n");
-        if (errno == EINVAL) {
-            perror("invalid semaphore\n");
-        }
-        exit(1);
-    }
+    // // close semaphore
+    // if (sem_close(mem.sem_ptr) != 0) {
+    //     perror("sem_close failed\n");
+    //     if (errno == EINVAL) {
+    //         perror("invalid semaphore\n");
+    //     }
+    //     exit(1);
+    // }
 
-    // removes named semaphore
-    if (sem_unlink(mem.name) != 0) {
-        perror("sem_unlink failed\n");
-        exit(1);
-    }
+    // // removes named semaphore
+    // if (sem_unlink(mem.name) != 0) {
+    //     perror("sem_unlink failed\n");
+    //     exit(1);
+    // }
 }
 
 void *shmheap_underlying(shmheap_memory_handle mem) {
-
-    // update virtual address
-    smhheap_update(mem);
 
     return mem.ptr;
 }
 
 void *shmheap_alloc(shmheap_memory_handle mem, size_t sz) {
-    printf("In alloc\n");
+    // printf("In alloc.....\n");
     
-    int cur = 0;
+    int cur;
     int capacity;
-    int insufficient_space = 1;
     sz = (size_t) shmheap_convert_to_byte_aligned_size((int) sz);
     shmheap_divider *divider;
+ 
 
-    if (sem_wait(mem.sem_ptr) != 0) {
+    if (sem_wait(mem.ptr) != 0) {
         perror("sem_wait failed\n");
         exit(1);
     }
 
-    // update virtual address
-    smhheap_update(mem);
+    cur = sizeof(sem_t);
 
-    while (insufficient_space) {
+    while (cur < (int) mem.len) {
+        // printf("Total memory size: %ld\n", mem.len);
+        // printf("Looking at: %d\n", cur);
 
-        cur = 0;
+        // look at the current divider.
+        divider = (shmheap_divider *) (mem.ptr + cur);
 
-        while (1) {
-            printf("Total memory size: %ld\n", mem.len);
-            printf("Looking at: %d\n", cur);
+        // check if the space on the right of the divider is free.
+        if (divider->is_free == 1) {
+            
+            // Since the space is free,
+            // calculate the capacity of this space.
+            capacity = divider->next - cur - sizeof(shmheap_divider);
 
-            // look at the current divider.
-            divider = (shmheap_divider *) (mem.ptr + cur);
-
-            // check if the space on the right of the divider is free.
-            if (divider->is_free == 1) {
-                
-                // Since the space is free,
-                // calculate the capacity of this space.
-                capacity = divider->next - cur - sizeof(shmheap_divider);
-
-                // if capacity == sz and there exists a next divider
-                // in this case, we don't need to add new divider
-                // we need to :
+            // if capacity == sz
+            // in this case, we don't need to add new divider
+            // we need to :
+            // (1) change is_free in divider to 0
+            // (2) shift cur to position of data
+            if (capacity == (int) sz) {
+                // printf("1\n");
                 // (1) change is_free in divider to 0
+                divider->is_free = 0;
+
                 // (2) shift cur to position of data
-                // (3) update insufficient_space flag
-                if ((capacity == (int) sz) && (divider->next != (int) mem.len)) {
-                    // printf("1\n");
-                    // (1) change is_free in divider to 0
-                    divider->is_free = 0;
+                cur += sizeof(shmheap_divider);
 
-                    // (2) shift cur to position of data
-                    cur += sizeof(shmheap_divider);
-
-                    // (3) update insufficient_space flag
-                    insufficient_space = 0;
-                    break;
-                }
-
-                // if capacity >= size of data + new divider
-                // in this case we need to allocate space for data and new divider
-                // we need to:
-                // (1) create new divider and insert it at the end of the new data
-                // (2) update current divider
-                // (3) shift cur to position of data
-                // (4) update insufficient_space flag
-                else if (capacity >= (int) sz + (int) sizeof(shmheap_divider)) {
-                    // printf("2\n");
-                    // (1) create new divider and insert it at the end of the data
-                    shmheap_divider new_divider;
-                    new_divider.next = divider->next;
-                    new_divider.is_free = (int) ((capacity- sizeof(shmheap_divider) - sz) > 0);
-                    shmheap_divider *new_divider_ptr =  (shmheap_divider *) (mem.ptr + cur + sizeof(shmheap_divider) + sz);
-                    *new_divider_ptr = new_divider;
-
-                    // (2) update current divider
-                    divider->is_free = 0;
-                    divider->next = cur + sizeof(shmheap_divider) + sz;
-
-                    // (3) shift cur to position of data
-                    cur += sizeof(shmheap_divider);
-
-                    // (4) update insufficient_space flag
-                    insufficient_space = 0;
-                    break;
-                }
-            }
-            if (divider->next == mem.len) {
                 break;
             }
-            cur = divider->next;
+
+            // if capacity >= size of data + new divider
+            // in this case we need to allocate space for data and new divider
+            // we need to:
+            // (1) create new divider and insert it at the end of the new data
+            // (2) update current divider
+            // (3) shift cur to position of data
+            else if (capacity >= (int) sz + (int) sizeof(shmheap_divider)) {
+                // printf("2\n");
+
+                // (1) create new divider and insert it at the end of the data
+                shmheap_divider new_divider;
+                new_divider.next = divider->next;
+                new_divider.is_free = 1;
+                shmheap_divider *new_divider_ptr =  (shmheap_divider *) (mem.ptr + cur + sizeof(shmheap_divider) + sz);
+                *new_divider_ptr = new_divider;
+
+                // (2) update current divider
+                divider->is_free = 0;
+                divider->next = cur + sizeof(shmheap_divider) + sz;
+
+                // (3) shift cur to position of data
+                cur += sizeof(shmheap_divider);
+
+                break;
+            }
         }
-
-        // none of the holes are able to accomodate the requested space
-        // need to increase size of shared memory space
-        printf("%ld\n", divider->next);
-        if (insufficient_space) {
-            printf("insufficient_space\n");
-
-            // open shared memory space
-            int fd = shm_open(mem.name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-            if (fd == -1) {
-                perror("open failed\n");
-                exit(1);
-            }
-
-            // increase the size of the shared memory space 
-            // by sz + size of 1 divider
-            int new_len = mem.len + sz + sizeof(shmheap_divider);
-            if (ftruncate(fd, new_len) != 0) {
-                perror("ftruncate failed\n");
-                exit(1);
-            }
-
-            // remap shared memory to virtual address space
-            void *ptr = mremap(mem.ptr, mem.len, new_len, 0);
-            if (ptr == MAP_FAILED) {
-                perror("mremap failed\n");
-                exit(1);
-            }
-
-            // store shared memory information
-
-            // printf("Original length: %ld\n", mem.len);
-            mem.len = new_len;
-            mem.ptr = ptr;
-
-            divider = (shmheap_divider *) (mem.ptr + cur);
-            divider->next = new_len;
-
-            close(fd);
-
-        }
-
-        // printf("Next\n");
+        cur = divider->next;
+        // printf("%d\n", cur);
+        
     }
  
-    if (sem_post(mem.sem_ptr) != 0) {
+    if (sem_post(mem.ptr) != 0) {
         perror("sem_post failed\n");
         exit(1);
     }
@@ -324,15 +262,13 @@ void *shmheap_alloc(shmheap_memory_handle mem, size_t sz) {
 }
 
 void shmheap_free(shmheap_memory_handle mem, void *ptr) {
-    // printf("In free\n");
+    
+    // printf("In free.....\n");
 
-    if (sem_wait(mem.sem_ptr) != 0) {
+    if (sem_wait(mem.ptr) != 0) {
         perror("sem_wait failed\n");
         exit(1);
     }
-
-    // update virtual address
-    smhheap_update(mem);
 
     // get current divider
     int cur = ptr - mem.ptr - sizeof(shmheap_divider);
@@ -350,7 +286,6 @@ void shmheap_free(shmheap_memory_handle mem, void *ptr) {
     if (prev != -1) {
         prev_divider = (shmheap_divider *) (mem.ptr + prev);
     }
-
     // if previous and next dividers both exist and are free
     // (1) update previous divider
     if (prev_divider != NULL && next_divider != NULL &&
@@ -397,15 +332,16 @@ void shmheap_free(shmheap_memory_handle mem, void *ptr) {
         }
         exit(1);
     }
-    if (sem_post(mem.sem_ptr) != 0) {
+
+
+    if (sem_post(mem.ptr) != 0) {
         perror("sem_post failed\n");
         exit(1);
     }
+    // printf("Ended free.....\n");
 }
 
 shmheap_object_handle shmheap_ptr_to_handle(shmheap_memory_handle mem, void *ptr) {
-    (void) ptr;
-
     // store the name of the shared memory object
     char *name = mem.name;
 
@@ -424,60 +360,27 @@ void *shmheap_handle_to_ptr(shmheap_memory_handle mem, shmheap_object_handle hdl
     return ptr + offset;
 }
 
-void smhheap_update(shmheap_memory_handle mem) {
-    // printf("In update\n");
-
-    // open shared memory object that already exists via shm_open
-    int fd = shm_open(mem.name, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1) {
-        perror("open failed\n");
-        exit(1);
-    }
-
-    // get size of shared memory
-    struct stat s;
-    if(fstat(fd, &s) != 0) {
-        perror("stat failed\n");
-        exit(1);
-    }
-    int new_len = s.st_size;
-    
-
-    // if our recorded memory size is not the same the the current
-    // size of the shared memory, it means that we have an
-    // outdated version of shared memory and we should update our record
-    if ((int) mem.len != new_len) {
-        printf("updated\n");
-
-        // remap shared memory to virtual address space
-        void *ptr = mremap(mem.ptr, mem.len, new_len, MREMAP_MAYMOVE);
-        if (ptr == MAP_FAILED) {
-            perror("mremap failed\n");
-            exit(1);
-        }
-
-        // store shared memory information
-        mem.len = new_len;
-        mem.ptr = ptr;
-    }
-
-    close(fd);
-}
-
 /*
     Gets the offset for the previous divider, if it exists.
     If previous divider does not exists, return -1.
 */
 int smhheap_get_prev_divider(shmheap_memory_handle mem, int offset) {
-
+    // printf("offset: %d\n", offset);
     int prev = -1;
-    int cur = 0;
+    int cur = sizeof(sem_t);
     while (cur < offset) {
         shmheap_divider *ptr = (shmheap_divider *) (mem.ptr + cur);
         prev = cur;
-        cur += ptr->next;
-    }
 
+        // printf("%d\n", cur);
+        // if (ptr->next == 0) {
+        //     printf("0!\n");
+        //     printf("cur: %d\n", cur);
+        //     exit(1);
+        // }
+        cur = ptr->next;
+    }
+    // printf("prev: %d\n", prev);
     return prev;
 }
 

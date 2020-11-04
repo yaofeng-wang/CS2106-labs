@@ -41,31 +41,13 @@ typedef struct {
 
 
 
-typedef struct {
-    // position of next divider relative to the start of heap, 
-    // value = length of heap if next divider does not exist.
-    int next;
 
-    // Whether the data to the right is free    
-    int is_free; 
-
-    // 
-    sem_t *sem_ptr;
-
-    // offset to the additional shared memory
-    int next_mem;
-
-    
-
-} shmheap_first_divider; // 8 + 32 + 4
 
 
 typedef struct {
 	char *name;
 	void *ptr;
 	size_t len;
-
-	sem_t *sem_ptr;
 } shmheap_memory_handle;
 
 
