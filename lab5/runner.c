@@ -631,7 +631,6 @@ int main(int argc, char *argv[]) {
     size_t size = GEN_SIZE();
     FILL_FILE(file2, size);
     eprintf("filling %s with %zu bytes\n", path2, size);
-    printf("1\n");
     // fill file1 (smaller file)
     size = size >> 1;
     FILL_FILE(file1, size);

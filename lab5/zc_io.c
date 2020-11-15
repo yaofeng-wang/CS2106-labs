@@ -63,11 +63,9 @@ zc_file *zc_open(const char *path) {
     return NULL;
   }
   int size = statbuf.st_size;
-  printf("size: %d\n", size);
 
   // map file into virtual address space
   file_ptr->ptr = NULL;
-  printf("value of file->ptr %p\n", file_ptr->ptr);
   update_ptr_to_virtual_address(file_ptr, size);
 
   // initialise synchronization resources 
@@ -371,9 +369,7 @@ int zc_copyfile(const char *source, const char *dest) {
 
 
 void update_ptr_to_virtual_address(zc_file *file, int new_size) {
-  // if new_size is 0, then don't map into virutal memory
-
-  printf("file->ptr is NULL: %d\n", file->ptr == NULL);
+  // if new_size is 0, then don't map into virtual memory
   if (new_size == 0) {
     file->ptr = NULL;  
   }
