@@ -107,12 +107,12 @@ int zc_close(zc_file *file) {
 const char *zc_read_start(zc_file *file, size_t *size) {
   if (pthread_mutex_lock(&(file->num_readers_mutex)) != 0) {
     perror("pthread_mutex_lock failed\n");
-    exit(1);
+    return NULL;    
   }
   if (file->num_readers == 0) {
     if (pthread_mutex_lock(&(file->buffer_mutex)) != 0) {
       perror("pthread_mutex_lock failed\n");
-      exit(1);
+      return NULL;    
     }
   }
 
@@ -120,7 +120,7 @@ const char *zc_read_start(zc_file *file, size_t *size) {
 
   if (pthread_mutex_unlock(&(file->num_readers_mutex)) != 0) {
     perror("pthread_mutex_unlock failed\n");
-    exit(1);
+    return NULL;    
   }
 
 
@@ -183,7 +183,7 @@ char *zc_write_start(zc_file *file, size_t size) {
 
   if (pthread_mutex_lock(&(file->buffer_mutex)) != 0) {
     perror("pthread_mutex_lock failed\n");
-    exit(1);
+    return NULL;
   }
 
   // invalid offset
@@ -199,7 +199,7 @@ char *zc_write_start(zc_file *file, size_t size) {
     // increase size of file
     if (ftruncate(file->fd, file->offset) != 0) {
       perror("ftruncate failed\n");
-      exit(1);
+      return NULL;
     }
 
     update_ptr_to_virtual_address(file, file->offset);
@@ -222,7 +222,7 @@ char *zc_write_start(zc_file *file, size_t size) {
     // increase size of file
     if (ftruncate(file->fd, new_size) != 0) {
       perror("ftruncate failed\n");
-      exit(1);
+      return NULL;
     }
 
     update_ptr_to_virtual_address(file, new_size);
@@ -259,7 +259,7 @@ off_t zc_lseek(zc_file *file, long offset, int whence) {
 
   if (pthread_mutex_lock(&(file->buffer_mutex)) != 0) {
     perror("pthread_mutex_lock failed\n");
-    exit(1);
+    return (off_t) -1;
   }
 
   int retval;
@@ -287,7 +287,7 @@ off_t zc_lseek(zc_file *file, long offset, int whence) {
 
   if (pthread_mutex_unlock(&(file->buffer_mutex)) != 0) {
     perror("pthread_mutex_unlock failed\n");
-    exit(1);
+    return (off_t) -1;;
   }
 
   return retval;
@@ -333,7 +333,7 @@ int zc_copyfile(const char *source, const char *dest) {
   // re-size of dest file so that it has the same size as source file
   if (ftruncate(dest_zc_file->fd, source_zc_file->size) != 0) {
     perror("ftruncate failed\n");
-    exit(1);
+    return -1
   }
   update_ptr_to_virtual_address(dest_zc_file, source_zc_file->size);
 
