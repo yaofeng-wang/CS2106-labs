@@ -14,6 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <math.h>
 #include "zc_io.h"
 
 // ## will remove the comma if no variable arguments are given to the macro
@@ -238,7 +239,9 @@ int main(int argc, char *argv[]) {
       FAIL_IF(!read_ptr, "zc_read failed - returned NULL\n");
       FAIL_IF(memcmp(randdata + offset, read_ptr, expected_read_size),
               "zc_read returned wrong contents\n");
+
       zc_read_end(zcfile);
+
       offset += read_size;
     }
 
@@ -276,6 +279,7 @@ int main(int argc, char *argv[]) {
       char *write_ptr = zc_write_start(zcfile, write_size);
       FAIL_IF(!write_ptr, "zc_write_start failed - returned NULL\n");
       memcpy(write_ptr, randdata + 1048576 + offset, write_size);
+
       zc_write_end(zcfile);
 
       offset += write_size;
@@ -294,6 +298,7 @@ int main(int argc, char *argv[]) {
     }
 
     zc_close(zcfile);
+
   }
   eprintf("test 2a passed\n\n");
 
@@ -315,8 +320,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < 4; ++i) {
       const size_t write_size = (size_t)(lrand48() % ((size >> 2) - 16));
       eprintf("writing %zu to expected offset %zu\n", write_size, offset);
-
+ 
       char *write_ptr = zc_write_start(zcfile, write_size);
+
       FAIL_IF(!write_ptr, "zc_write_start failed - returned NULL\n");
       memcpy(write_ptr, randdata + offset, write_size);
       zc_write_end(zcfile);
@@ -599,7 +605,9 @@ int main(int argc, char *argv[]) {
     zc_write_end(zcfile);  
 
     // update expected results 
+    file_mirror = realloc(file_mirror, size + 8 + write_size);
     memset(file_mirror + size, 0, 8);
+
     memcpy(file_mirror + offset, randdata + 1048576 + offset, write_size);                         
     offset += write_size;                                                                                                                                                       \
     
@@ -611,13 +619,19 @@ int main(int argc, char *argv[]) {
     // check the content is correct
     FAIL_IF(memcmp(scratch, file_mirror, size),                                                    
             "zc_write failed - wrong contents seen in file after zc_write_end\n"); 
-
+    zc_close(zcfile);
+    free(file_mirror);
+    fclose(file1);
+    unlink(path1);
   }
   eprintf("test 6 passed\n\n");
 
   eprintf("test 7 - size of content in source < size of content in dest\n");
   eprintf("***size of dest should decrease\n");
   {
+    unlink(path1);
+    unlink(path2);
+
     // reset value in scratch
     memset(scratch, '\0', 5 * 1024 * 1024);
 
@@ -629,7 +643,9 @@ int main(int argc, char *argv[]) {
 
     // fill file2 (larger file)
     size_t size = GEN_SIZE();
+
     FILL_FILE(file2, size);
+
     eprintf("filling %s with %zu bytes\n", path2, size);
     // fill file1 (smaller file)
     size = size >> 1;
@@ -656,7 +672,6 @@ int main(int argc, char *argv[]) {
     fclose(file1);
     unlink(path1);
     unlink(path2);
-
 
   }
   eprintf("test 7 passed\n\n");
@@ -694,7 +709,11 @@ int main(int argc, char *argv[]) {
     size_t read_size = 10;                   
     const char *read_ptr = zc_read_start(zcfile, &read_size);                                       
     FAIL_IF(read_size != 0, "zc_read did not update read_size to 0\n");                   
-    FAIL_IF(read_ptr != NULL, "zc_read did not return NULL pointer\n");                                
+    FAIL_IF(read_ptr != NULL, "zc_read did not return NULL pointer\n");   
+    zc_close(zcfile);
+    free(file_mirror);  
+    fclose(file1);
+    unlink(path1);                          
   }
   eprintf("test 8a passed\n\n");
 
@@ -727,6 +746,10 @@ int main(int argc, char *argv[]) {
     eprintf("seeking SEEK_SET to offset %zu\n", offset);
     size_t retval = zc_lseek(zcfile, offset, SEEK_SET);
     FAIL_IF((long) retval !=   -1, "zc_lseek did not return -1");
+    zc_close(zcfile);
+    free(file_mirror);
+    fclose(file1);
+    unlink(path1);
   }
   eprintf("test 9a passed\n\n");
 
@@ -758,6 +781,8 @@ int main(int argc, char *argv[]) {
     long offset = 0;
     size_t retval = zc_lseek(zcfile, offset, -1);
     FAIL_IF((long) retval != -1, "zc_lseek did not return -1");
+    zc_close(zcfile);
+    free(file_mirror);
   }
   eprintf("test 9b passed\n\n");
 
