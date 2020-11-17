@@ -63,7 +63,7 @@ static void *threadfn(void *datav) {
   size_t real_read_size = op_size;
   free(datav);
 
-  // read 
+  // read
   pthread_barrier_wait(&barrier);
   const char *read = zc_read_start(zcfile, &real_read_size);
   FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",

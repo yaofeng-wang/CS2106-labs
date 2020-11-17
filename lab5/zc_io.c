@@ -69,8 +69,14 @@ zc_file *zc_open(const char *path) {
   update_ptr_to_virtual_address(file_ptr, size);
 
   // initialise synchronization resources 
-  sem_init(&(file_ptr->buffer_mutex), 0, 1); 
-  sem_init(&(file_ptr->num_readers_mutex), 0, 1);
+  if (sem_init(&(file_ptr->buffer_mutex), 0, 1) != 0) {
+    perror("sem_init failed\n");
+    return NULL;
+  } 
+  if (sem_init(&(file_ptr->num_readers_mutex), 0, 1) != 0) {
+    perror("sem_init failed\n");
+    return NULL;
+  }
   file_ptr->num_readers = 0;
 
   return file_ptr;
@@ -96,6 +102,16 @@ int zc_close(zc_file *file) {
    return -1;
   }
 
+  // destroy semaphores
+  if (sem_destroy(&(file->buffer_mutex)) != 0) {
+    perror("sem_destroy failed\n");
+    return -1;
+  } 
+  if (sem_destroy(&(file->num_readers_mutex)) != 0) {
+    perror("sem_destroy failed\n");
+    return -1;
+  }
+
   // de-allocate heap memory
   free(file);
   file = NULL;
@@ -106,11 +122,13 @@ int zc_close(zc_file *file) {
 const char *zc_read_start(zc_file *file, size_t *size) {
   if (sem_wait(&(file->num_readers_mutex)) != 0) {
     perror("sem_wait failed\n");
+    *size = 0;
     return NULL;    
   }
   if (file->num_readers == 0) {
     if (sem_wait(&(file->buffer_mutex)) != 0) {
       perror("sem_wait failed\n");
+      *size = 0;
       return NULL;    
     }
   }
@@ -119,6 +137,7 @@ const char *zc_read_start(zc_file *file, size_t *size) {
 
   if (sem_post(&(file->num_readers_mutex)) != 0) {
     perror("sem_post failed\n");
+    *size = 0;
     return NULL;    
   }
 

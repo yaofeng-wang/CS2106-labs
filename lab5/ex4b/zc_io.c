@@ -164,9 +164,6 @@ int zc_close(zc_file *file) {
       ptr = next;
     }
     free(file->head_ptr);
-
-    perror("presence of access_info entry when none should exist\n");
-
   } 
 
   if (file->buffer_mutexes) {
@@ -196,6 +193,7 @@ const char *zc_read_start(zc_file *file, size_t *size) {
 
     int num_pages = calc_num_pages(file);
     int *locked_mutexes = malloc(num_pages * sizeof(int));
+    IF_TRUE_THEN_FAILED_TO_READ(locked_mutexes == NULL, "malloc failed\n");
     for (int i=0; i < num_pages; i++) {
       locked_mutexes[i] = 0;
     }
@@ -289,7 +287,6 @@ void zc_read_end(zc_file *file) {
     ptr = NULL;
   }
 
-
   for (int i = start_index; i <= end_index; i++) {
     file->num_readers[i]--;
     
@@ -317,6 +314,7 @@ char *zc_write_start(zc_file *file, size_t size) {
     int num_pages = calc_num_pages(file);
     int able_to_get_mutexes = 1;
     int *locked_mutexes = calloc(num_pages, sizeof(int));
+    IF_TRUE_THEN_FAILED_TO_WRITE(locked_mutexes == NULL, "malloc failed\n");
     for (int i=0; i < num_pages; i++) {
         locked_mutexes[i] = 0;
     }
@@ -407,15 +405,12 @@ char *zc_write_start(zc_file *file, size_t size) {
 
 void zc_write_end(zc_file *file) {
 
-
   IF_TRUE_THEN_EXIT_ONE(wait_try_to_access_buffer_mutex(file) != 0, 
       "wait_try_to_access_buffer_mutex failed\n");
 
 
   zc_access_info *ptr = remove_access_info_entry(file);
   IF_TRUE_THEN_EXIT_ONE(ptr == NULL, "get_access_info_entry failed\n");
-
-
 
   int start_index = ptr->start_index;
   int end_index = ptr->end_index;
