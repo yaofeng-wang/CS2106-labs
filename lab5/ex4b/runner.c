@@ -91,6 +91,77 @@ static void *threadfn(void *datav) {
   return NULL;
 }
 
+
+
+
+static void *threadfn2(void *datav) {
+  struct thread_data *data = (struct thread_data *)datav;
+  zc_file *zcfile = data->file;
+  const size_t op_size = data->op_size;
+  size_t real_read_size = op_size;
+  free(datav);
+
+  // read 
+  // barrier 1
+  pthread_barrier_wait(&barrier);
+  FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+  char *read = zc_read_start(zcfile, &real_read_size);
+  FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+          op_size, real_read_size);
+  FAIL_IF(memcmp(read, randdata, op_size), "zc_read returned wrong contents\n");
+  thread_counter = 1;
+  zc_read_end(zcfile);
+  // barrier 2
+  pthread_barrier_wait(&barrier);
+
+  //barrier 3
+  pthread_barrier_wait(&barrier);
+  FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+  read = zc_read_start(zcfile, &real_read_size);
+  FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+          op_size, real_read_size);
+  FAIL_IF(memcmp(read, randdata, op_size), "zc_read returned wrong contents\n");
+  thread_counter = 1;
+  zc_read_end(zcfile);
+
+  //barrier 4
+  pthread_barrier_wait(&barrier);
+
+  // barrier 5
+  pthread_barrier_wait(&barrier);
+  FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+  read = zc_write_start(zcfile, op_size);
+  thread_counter = 1;
+  zc_write_end(zcfile);
+
+  // barrier 6
+  pthread_barrier_wait(&barrier);
+
+  size_t s = sysconf(_SC_PAGESIZE);
+
+  // barrier 7
+  pthread_barrier_wait(&barrier);
+  FAIL_IF(zc_lseek(zcfile, s, SEEK_SET) != s, "unable to lseek to desired position\n");
+  read = zc_write_start(zcfile, s);
+  thread_counter = 1;
+  zc_write_end(zcfile);
+
+  // barrier 8
+  pthread_barrier_wait(&barrier);
+
+  // barrier 9
+  pthread_barrier_wait(&barrier);
+  zc_lseek(zcfile, 10, SEEK_END);
+  read = zc_write_start(zcfile, s);
+  thread_counter = 1;
+  zc_write_end(zcfile);
+
+  return NULL;
+}
+
+
+
+
 #undef FAIL_IF
 
 // returns size of file
@@ -786,6 +857,144 @@ int main(int argc, char *argv[]) {
   }
   eprintf("test 9b passed\n\n");
 
+  eprintf("test 10 - PAGE-WISE synchronisation\n"
+          "*** NOTE: if runner hangs for more than a few seconds,\n"
+          "*** you probably have a synchronisation problem\n");
+  {
+    size_t counter = 0;
+    const size_t size = GEN_SIZE();
+    FILL_FILE(file1, size);
+    eprintf("filling file with %zu bytes\n", size);
+
+    zc_file *zcfile = zc_open(path1);
+    eprintf("opening %s\n", path1);
+    FAIL_IF(!zcfile, "zc_open %s failed\n", path1);
+
+    // acquire simultaneous reads
+    const size_t op_size = (size_t)(lrand48() % ((size >> 3) - 16));
+    size_t real_read_size = op_size;
+    eprintf("acquiring 2 reads of %zu from the same thread\n", op_size);
+    const char *read1 = zc_read_start(zcfile, &real_read_size);
+    FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+            op_size, real_read_size);
+    const char *read2 = zc_read_start(zcfile, &real_read_size);
+    FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+            op_size, real_read_size);
+    FAIL_IF(memcmp(read1, randdata, op_size), "zc_read returned wrong contents\n");
+    FAIL_IF(memcmp(read2, randdata + op_size, op_size), "zc_read returned wrong contents\n");
+    zc_read_end(zcfile);
+    zc_read_end(zcfile);
+    eprintf("acquired 2 reads of %zu from the same thread\n", op_size);
+
+    {
+      struct thread_data *thread_data = malloc(sizeof(struct thread_data));
+      FAIL_IF(!thread_data, "malloc failed\n");
+      *thread_data = (struct thread_data){.file = zcfile, .op_size = op_size};
+      pthread_create(&thread, NULL, threadfn2,
+                     // let the thread free it
+                     thread_data);
+    }
+
+    eprintf("acquiring 2 reads of %zu from separate threads\n", op_size);
+    thread_counter = 0;
+    // we acquire first
+    read1 = zc_read_start(zcfile, &real_read_size);
+    FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+            op_size, real_read_size);
+    FAIL_IF(memcmp(read1, randdata + op_size * 2, op_size), "zc_read returned wrong contents\n");
+    // barrier 1, then they acquire
+    pthread_barrier_wait(&barrier);
+    // wait ~1s for them to indicate that they have acquired
+    TEST4_WAITUNTIL(thread_counter > 0, 1000);
+    FAIL_IF(!thread_counter, "thread could not acquire read within 1s\n");
+    // release
+    zc_read_end(zcfile);
+    // barrier 2
+    pthread_barrier_wait(&barrier);  
+
+    eprintf("acquiring 2 reads of %zu from separate threads in same location\n", op_size);
+    thread_counter = 0;
+    // we acquire first
+    FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+    read1 = zc_read_start(zcfile, &real_read_size);
+    FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+            op_size, real_read_size);
+    FAIL_IF(memcmp(read1, randdata, op_size), "zc_read returned wrong contents\n");
+    // barrier 3
+    pthread_barrier_wait(&barrier);
+    // wait ~1s for them to indicate that they have acquired
+    TEST4_WAITUNTIL(thread_counter > 0, 1000);
+    FAIL_IF(!thread_counter, "thread could not acquire read within 1s\n");
+    // release
+    zc_read_end(zcfile);
+
+    // barrier 4
+    pthread_barrier_wait(&barrier);
+
+    eprintf("acquiring read and then write of %zu from separate threads, at same pages\n", op_size);
+    thread_counter = 0;
+    // we acquire first
+    FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+    read1 = zc_read_start(zcfile, &real_read_size);
+    FAIL_IF(real_read_size != op_size, "zc_read returned wrong size - expected %zu, got %zu\n",
+            op_size, real_read_size);
+    FAIL_IF(memcmp(read1, randdata, op_size), "zc_read returned wrong contents\n");
+    // barrier 5
+    pthread_barrier_wait(&barrier);
+    // wait 500ms, be reasonably sure they are blocked
+    TEST4_WAITUNTIL(thread_counter > 0, 500);
+    FAIL_IF(thread_counter, "worker thread acquired write while we are reading!\n");
+    // release the read
+    zc_read_end(zcfile);
+    // now wait until they get the write
+    TEST4_WAITUNTIL(thread_counter > 0, 1000);
+    FAIL_IF(!thread_counter, "thread could not acquire write within 1s\n");
+    // barrier 6
+    pthread_barrier_wait(&barrier);
+
+
+    eprintf("acquiring read and then write of %zu from separate threads, at adjacent pages\n", op_size);
+    size_t s = sysconf(_SC_PAGESIZE);
+    size_t real_s = s; 
+    printf("page size: %ld\n",s);
+    thread_counter = 0;
+    // we acquire first
+    FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+    read1 = zc_read_start(zcfile, &s);
+    FAIL_IF(real_s != s, "zc_read returned wrong size - expected %zu, got %zu\n",
+            s, real_s);
+    FAIL_IF(memcmp(read1, randdata, s), "zc_read returned wrong contents\n");
+    // barrier 7
+    pthread_barrier_wait(&barrier);
+    // now wait until they get the write
+    TEST4_WAITUNTIL(thread_counter > 0, 1000);
+    FAIL_IF(!thread_counter, "thread could not acquire write within 1s\n");
+    zc_read_end(zcfile);
+    // barrier 8
+    pthread_barrier_wait(&barrier);
+
+    eprintf("acquiring write and then write of %zu from separate threads, at different pages\n", op_size);
+    printf("file size: %ld\n", size);
+    printf("last page: %ld\n", (int) size / sysconf(_SC_PAGESIZE));
+    thread_counter = 0;
+    FAIL_IF(zc_lseek(zcfile, 0, SEEK_SET) != 0, "unable to lseek to start of file\n");
+    read1 = zc_write_start(zcfile, op_size);
+    // barrier 9, then they acquire
+    pthread_barrier_wait(&barrier);
+    // now wait until they get the write
+    TEST4_WAITUNTIL(thread_counter > 0, 1000);
+    FAIL_IF(!thread_counter, "thread could not acquire write within 1s\n");
+    zc_write_end(zcfile);
+
+
+    pthread_join(thread, NULL);
+    thread = pthread_self();
+
+    zc_close(zcfile);
+  }
+  eprintf("test 10 passed\n\n");
+
+  eprintf("end of tests for Ex4b\n");
 
   retv = 0;
 

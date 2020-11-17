@@ -169,8 +169,6 @@ int zc_close(zc_file *file) {
 
   } 
 
-
-
   if (file->buffer_mutexes) {
     free(file->buffer_mutexes);
     file->buffer_mutexes = NULL;
@@ -319,6 +317,9 @@ char *zc_write_start(zc_file *file, size_t size) {
     int num_pages = calc_num_pages(file);
     int able_to_get_mutexes = 1;
     int *locked_mutexes = calloc(num_pages, sizeof(int));
+    for (int i=0; i < num_pages; i++) {
+        locked_mutexes[i] = 0;
+    }
     if (locked_mutexes == NULL) {
       return NULL;
     }
@@ -329,14 +330,12 @@ char *zc_write_start(zc_file *file, size_t size) {
           "add_access_info_entry failed\n");
     } else {
 
-      for (int i=0; i < num_pages; i++) {
-        locked_mutexes[i] = 0;
-
-      }
-
+      // take min(file->offset, file->size) as start offset
       long start_offset = (file->offset <= file->size) ? file->offset : file->size;
       int start_index = get_index(start_offset);
-      int end_index = get_index(file->size);
+
+      long end_offset = (file->offset + size < file->size) ? file->offset + size -1: file->size -1;
+      int end_index = get_index(end_offset);
 
       // for each of the pages that we need to write
       IF_TRUE_THEN_FAILED_TO_WRITE(try_to_get_mutexes(file, start_index, end_index, locked_mutexes, &able_to_get_mutexes, WRITE) != 0, 
@@ -367,8 +366,6 @@ char *zc_write_start(zc_file *file, size_t size) {
       // sleep for 1 second to let other threads go first
       sleep(1);
     }
-
-
   }
 
   // invalid offset
@@ -399,7 +396,6 @@ char *zc_write_start(zc_file *file, size_t size) {
     IF_TRUE_THEN_FAILED_TO_WRITE(update_file_size(file, new_size, 0) != 0, 
       "update_file_size failed\n");
   }
-
 
   // update offset
   file->offset += size;
@@ -442,6 +438,7 @@ void zc_write_end(zc_file *file) {
 
   IF_TRUE_THEN_EXIT_ONE(post_try_to_access_buffer_mutex(file) != 0, 
       "post_try_to_access_buffer_mutex failed\n");
+
 }
 
 /**************
@@ -515,17 +512,6 @@ int zc_copyfile(const char *source, const char *dest) {
     return -1;
   }
 
-  // // re-size of dest file so that it has the same size as source file
-  // if (ftruncate(dest_zc_file->fd, source_zc_file->size) != 0) {
-  //   perror("ftruncate failed\n");
-  //   return -1;
-  // }
-  // update_ptr_to_virtual_address(dest_zc_file, source_zc_file->size);
-  // dest_zc_file->size = source_zc_file->size;
-
-  // if (update_file_size(dest_zc_file, source_zc_file->size, 0) != 0) {
-  //   return -1;
-  // }
   if (source_zc_file->size < dest_zc_file->size) {
     long old_size = dest_zc_file->size;
     long new_size = source_zc_file->size;
@@ -774,8 +760,7 @@ int post_try_to_access_buffer_mutex(zc_file *file) {
 void set_start_and_end_index(zc_file *file, size_t* size, int *start_index, int *end_index) {
   *start_index = get_index(file->offset);
   long new_offset = ((file->size - file->offset) >= (long) *size) ? (long) (file->offset + *size) : (long) file->size;
-  *end_index = get_index(new_offset);
-
+  *end_index = get_index(new_offset-1);
 }
 
 zc_access_info *remove_access_info_entry(zc_file *file) {
