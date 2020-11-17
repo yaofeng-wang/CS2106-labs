@@ -1,6 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
-#include <pthread.h>
+#include <semaphore.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -23,9 +23,9 @@ struct zc_file {
   // file descriptor to the opened file
   int fd;
   // mutex for access to the memory space
-  pthread_mutex_t buffer_mutex;
+  sem_t buffer_mutex;
   // mutex for modifying the number of readers
-  pthread_mutex_t num_readers_mutex;
+  sem_t num_readers_mutex;
   // number of readers
   int num_readers;
 };
@@ -69,11 +69,10 @@ zc_file *zc_open(const char *path) {
   update_ptr_to_virtual_address(file_ptr, size);
 
   // initialise synchronization resources 
-  pthread_mutex_init(&(file_ptr->buffer_mutex), NULL); 
-  pthread_mutex_init(&(file_ptr->num_readers_mutex), NULL);
+  sem_init(&(file_ptr->buffer_mutex), 0, 1); 
+  sem_init(&(file_ptr->num_readers_mutex), 0, 1);
   file_ptr->num_readers = 0;
 
-  
   return file_ptr;
 }
 
@@ -105,21 +104,21 @@ int zc_close(zc_file *file) {
 }
 
 const char *zc_read_start(zc_file *file, size_t *size) {
-  if (pthread_mutex_lock(&(file->num_readers_mutex)) != 0) {
-    perror("pthread_mutex_lock failed\n");
+  if (sem_wait(&(file->num_readers_mutex)) != 0) {
+    perror("sem_wait failed\n");
     return NULL;    
   }
   if (file->num_readers == 0) {
-    if (pthread_mutex_lock(&(file->buffer_mutex)) != 0) {
-      perror("pthread_mutex_lock failed\n");
+    if (sem_wait(&(file->buffer_mutex)) != 0) {
+      perror("sem_wait failed\n");
       return NULL;    
     }
   }
 
   file->num_readers++;
 
-  if (pthread_mutex_unlock(&(file->num_readers_mutex)) != 0) {
-    perror("pthread_mutex_unlock failed\n");
+  if (sem_post(&(file->num_readers_mutex)) != 0) {
+    perror("sem_post failed\n");
     return NULL;    
   }
 
@@ -153,23 +152,22 @@ const char *zc_read_start(zc_file *file, size_t *size) {
 }
 
 void zc_read_end(zc_file *file) {
-  if (pthread_mutex_lock(&(file->num_readers_mutex)) != 0) {
-    perror("pthread_mutex_lock failed\n");
+  if (sem_wait(&(file->num_readers_mutex)) != 0) {
+    perror("sem_wait failed\n");
     exit(1);
   }
 
   file->num_readers--;
 
   if (file->num_readers == 0) {
-    if (pthread_mutex_unlock(&(file->buffer_mutex)) != 0) {
-      perror("pthread_mutex_unlock failed\n");
+    if (sem_post(&(file->buffer_mutex)) != 0) {
+      perror("sem_post failed\n");
       exit(1);
     }
   }
-
   
-  if (pthread_mutex_unlock(&(file->num_readers_mutex)) != 0) {
-    perror("pthread_mutex_unlock failed\n");
+  if (sem_post(&(file->num_readers_mutex)) != 0) {
+    perror("sem_post failed\n");
     exit(1);
   }
   
@@ -181,8 +179,8 @@ void zc_read_end(zc_file *file) {
 
 char *zc_write_start(zc_file *file, size_t size) {
 
-  if (pthread_mutex_lock(&(file->buffer_mutex)) != 0) {
-    perror("pthread_mutex_lock failed\n");
+  if (sem_wait(&(file->buffer_mutex)) != 0) {
+    perror("sem_wait failed\n");
     return NULL;
   }
 
@@ -210,7 +208,6 @@ char *zc_write_start(zc_file *file, size_t size) {
   int old_offset = file->offset;
   int capacity = file->size - file->offset;
   
-
   // if file not mapped to virtual address yet OR
   // if size of mapped memory < size, we need to:
   // (1) increase size of file
@@ -244,8 +241,8 @@ void zc_write_end(zc_file *file) {
     exit(1);
   }
 
-  if (pthread_mutex_unlock(&(file->buffer_mutex)) != 0) {
-    perror("pthread_mutex_unlock failed\n");
+  if (sem_post(&(file->buffer_mutex)) != 0) {
+    perror("sem_post failed\n");
     exit(1);
   }
 
@@ -257,8 +254,8 @@ void zc_write_end(zc_file *file) {
 
 off_t zc_lseek(zc_file *file, long offset, int whence) {
 
-  if (pthread_mutex_lock(&(file->buffer_mutex)) != 0) {
-    perror("pthread_mutex_lock failed\n");
+  if (sem_wait(&(file->buffer_mutex)) != 0) {
+    perror("sem_post failed\n");
     return (off_t) -1;
   }
 
@@ -285,8 +282,8 @@ off_t zc_lseek(zc_file *file, long offset, int whence) {
     file->offset = retval;
   }
 
-  if (pthread_mutex_unlock(&(file->buffer_mutex)) != 0) {
-    perror("pthread_mutex_unlock failed\n");
+  if (sem_post(&(file->buffer_mutex)) != 0) {
+    perror("sem_post failed\n");
     return (off_t) -1;;
   }
 
@@ -320,7 +317,7 @@ int zc_copyfile(const char *source, const char *dest) {
   // set read pointer to source file
   // and check that expected read size is equals to actual read size
   long read_size = source_zc_file->size;
-  char *read_ptr = zc_read_start(source_zc_file, (size_t *) &read_size);
+  const char *read_ptr = zc_read_start(source_zc_file, (size_t *) &read_size);
   if (read_ptr == NULL) {
     return -1;
   }
@@ -333,7 +330,7 @@ int zc_copyfile(const char *source, const char *dest) {
   // re-size of dest file so that it has the same size as source file
   if (ftruncate(dest_zc_file->fd, source_zc_file->size) != 0) {
     perror("ftruncate failed\n");
-    return -1
+    return -1;
   }
   update_ptr_to_virtual_address(dest_zc_file, source_zc_file->size);
 
